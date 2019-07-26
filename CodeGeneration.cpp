@@ -29,6 +29,11 @@ bool isDelim(const char &c)
 	return c != ' ' && c != '\n' && c != '\t';
 }
 
+bool isDigit(const char &c)
+{
+	return '0' <= c && c <= '9';
+}
+
 void readingTextState(const char &c, stack<string> &buf, int &state)
 {
 	switch (c)
@@ -45,6 +50,8 @@ void readingCommandState(const char &c, string &comReadingBuf, int &state)
 {
 	if (!isDelim(c))
 		comReadingBuf += c;
+	else if (c == '$')
+		state = 0;
 	else if (!comReadingBuf.empty())
 	{
 		if (comReadingBuf == "for")
@@ -59,13 +66,46 @@ void readingCommandState(const char &c, string &comReadingBuf, int &state)
 	}
 }
 
-void readingCommandForState(const char &c, string &comReadingBuf, int &state, map<string, int*> &counters, stack<pair<int*, int> > cyclesBuf)
+void readingCommandForCounterState(const char &c, string &comReadingBuf, int &state, map<string, int*> &counters, stack<pair<int*, int> > cyclesBuf)
 {
 	if (!isDelim(c))
 		comReadingBuf += c;
 	else if (c == '=')
 	{
+		cyclesBuf.push(make_pair(new int, 0));
+		counters[comReadingBuf] = cyclesBuf.top().first;
+		state = 201;
+		comReadingBuf.clear();
+	}
+}
 
+void readingCommandForLowerBoundState(const char &c, string &comReadingBuf, int &state, stack<pair<int*, int> > cyclesBuf)
+{
+	if (!isDelim(c))
+	{
+		comReadingBuf += c;
+	}
+	else if (c == ':')
+	{
+		int value = atoi(comReadingBuf.c_str());
+		*cyclesBuf.top().first = value;
+		state = 202;
+		comReadingBuf.clear();
+	}
+}
+
+void readingCommandForUpperBoundState(const char &c, string &comReadingBuf, int &state, stack<pair<int*, int> > cyclesBuf)
+{
+	if (!isDelim(c))
+	{
+		comReadingBuf += c;
+	}
+	else if (!comReadingBuf.empty())
+	{
+		int value = atoi(comReadingBuf.c_str());
+		cyclesBuf.top().second = value;
+		state = 1;
+		comReadingBuf.clear();
 	}
 }
 
@@ -90,7 +130,13 @@ string generateCode(const string &templateFileContent)
 			readingCommandState(c, comReadingBuf, state);
 			break;
 		case 200:
-			readingCommandForState(c, comReadingBuf, state, numbers, cyclesBuf);
+			readingCommandForCounterState(c, comReadingBuf, state, numbers, cyclesBuf);
+			break;
+		case 201:
+			readingCommandForLowerBoundState(c, comReadingBuf, state, cyclesBuf);
+			break;
+		case 202:
+			readingCommandForUpperBoundState(c, comReadingBuf, state, cyclesBuf);
 			break;
 		}
 	}
