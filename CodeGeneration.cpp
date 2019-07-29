@@ -19,6 +19,16 @@ struct cycleInfo
 	}
 };
 
+struct genStatus
+{
+	stack<string> buf;
+	stack<char> comBuf;
+	stack<cycleInfo> cyclesInfo;
+	string comReadingBuf;
+	map<string, int*> numbers;
+	int state;
+};
+
 string fileToStr(ifstream &file)
 {
 	const int bufSize = 1024;
@@ -53,15 +63,15 @@ bool isDigit(const char &c)
 	return '0' <= c && c <= '9';
 }
 
-void readingTextState(const char &c, stack<string> &buf, int &state)
+void readingTextState(const char &c, genStatus &st)
 {
 	switch (c)
 	{
 	case '$':
-		state = 1;
+		st.state = 1;
 		break;
 	default:
-		buf.top() += c;
+		st.buf.top() += c;
 	}
 }
 
@@ -100,19 +110,19 @@ string inputVar(string text, string varName, int val)
 	return res;
 }
 
-void commandExecution(stack<string> &buf, stack<char> &comBuf, stack<cycleInfo> &cyclesInfo)
+void commandExecution(genStatus &st)
 {
-	switch (comBuf.top())
+	switch (st.comBuf.top())
 	{
 	case 'f':
 	{
-		string text = buf.top();
-		buf.pop();
-		for (int i = cyclesInfo.top().minVal; i <= cyclesInfo.top().maxVal; ++i)
+		string text = st.buf.top();
+		st.buf.pop();
+		for (int i = st.cyclesInfo.top().minVal; i <= st.cyclesInfo.top().maxVal; ++i)
 		{
-			buf.top().append(inputVar(text, cyclesInfo.top().counter, i));
+			st.buf.top().append(inputVar(text, st.cyclesInfo.top().counter, i));
 		}
-		cyclesInfo.pop();
+		st.cyclesInfo.pop();
 	}
 	break;
 	case 'i':
@@ -121,77 +131,77 @@ void commandExecution(stack<string> &buf, stack<char> &comBuf, stack<cycleInfo> 
 	}
 	break;
 	}
-	comBuf.pop();
+	st.comBuf.pop();
 }
 
-void readingCommandState(const char &c, string &comReadingBuf, int &state, stack<char> &comBuf, stack<string> &buf, stack<cycleInfo> &cyclesInfo)
+void readingCommandState(const char &c, genStatus &st)
 {
 	if (!isDelim(c) && c != '$' && c != '\n')
 	{
-		comReadingBuf += c;
+		st.comReadingBuf += c;
 	}
-	else if (!comReadingBuf.empty())
+	else if (!st.comReadingBuf.empty())
 	{
-		printf("%s\n", comReadingBuf.c_str());
-		if (comReadingBuf == "for")
+		printf("%s\n", st.comReadingBuf.c_str());
+		if (st.comReadingBuf == "for")
 		{
-			comBuf.push('f');
-			buf.push("");
-			state = 200;
+			st.comBuf.push('f');
+			st.buf.push("");
+			st.state = 200;
 		}
-		else if (comReadingBuf == "if")
+		else if (st.comReadingBuf == "if")
 		{
-			comBuf.push('e');
-			state = 300;
+			st.comBuf.push('e');
+			st.state = 300;
 		}
-		else if (comReadingBuf == "end")
+		else if (st.comReadingBuf == "end")
 		{
-			commandExecution(buf, comBuf, cyclesInfo);
+			commandExecution(st);
 			if (c == '$' || c == '\n')
-				state = 0;
+				st.state = 0;
 			else
-				state = 2;
+				st.state = 2;
 		}
 		else
 		{
 			//variable value search
-			buf.top().append("$" + comReadingBuf + "$");
+			st.buf.top().append("$" + st.comReadingBuf + "$");
 			if (c == '$' || c == '\n')
-				state = 0;
+				st.state = 0;
 			else
-				state = 2;
+				st.state = 2;
 		}
-		comReadingBuf.clear();
+		st.comReadingBuf.clear();
 	}
 }
 
-void ignoringSymbolState(const char &c, int &state)
+void ignoringSymbolState(const char &c, genStatus &st)
 {
 	if (c == '$' || c == '\n')
-		state = 0;
+		st.state = 0;
 }
 
-void readingCycleCounterState(const char &c, string &comReadingBuf, int &state, map<string, int*> &counters, stack<cycleInfo> &cyclesInfo)
+void readingCycleCounterState(const char &c, genStatus &st)
 {
 	if (c == '=')
 	{
-		cyclesInfo.push(cycleInfo(comReadingBuf));
-		state = 201;
-		comReadingBuf.clear();
+		st.cyclesInfo.push(cycleInfo(st.comReadingBuf));
+		st.state = 201;
+		st.comReadingBuf.clear();
 	}
 	else if (!isDelim(c))
-		comReadingBuf += c;
+		st.comReadingBuf += c;
 }
 
-void readingCycleLowerBoundState(const char &c, string &comReadingBuf, int &state, stack<cycleInfo> &cyclesInfo)
+void readingCycleLowerBoundState(const char &c, genStatus &st)
 {
 	if (c == ':')
 	{
-		if (isDigit(comReadingBuf[0]) || comReadingBuf[0] == '-')
+		if (isDigit(st.comReadingBuf[0]) || st.comReadingBuf[0] == '-')
 		{
-			cyclesInfo.top().minVal = atoi(comReadingBuf.c_str());
-			state = 202;
-			comReadingBuf.clear();
+			st.cyclesInfo.top().minVal = atoi(st.comReadingBuf.c_str());
+			st.state = 202;
+			st.comReadingBuf.clear();
 		}
 		else
 		{
@@ -199,20 +209,20 @@ void readingCycleLowerBoundState(const char &c, string &comReadingBuf, int &stat
 		}
 	}
 	else if (!isDelim(c))
-		comReadingBuf += c;
+		st.comReadingBuf += c;
 }
 
-void readingCycleUpperBoundState(const char &c, string &comReadingBuf, int &state, stack<cycleInfo> &cyclesInfo)
+void readingCycleUpperBoundState(const char &c, genStatus &st)
 {
 	if (!isDelim(c) && c != '$' && c != '\n')
-		comReadingBuf += c;
-	else if (!comReadingBuf.empty())
+		st.comReadingBuf += c;
+	else if (!st.comReadingBuf.empty())
 	{
-		if (isDigit(comReadingBuf[0]) || comReadingBuf[0] == '-')
+		if (isDigit(st.comReadingBuf[0]) || st.comReadingBuf[0] == '-')
 		{
-			cyclesInfo.top().maxVal = atoi(comReadingBuf.c_str());
-			state = (c == '$') || (c == '\n') ? 0: 1;
-			comReadingBuf.clear();
+			st.cyclesInfo.top().maxVal = atoi(st.comReadingBuf.c_str());
+			st.state = (c == '$') || (c == '\n') ? 0: 1;
+			st.comReadingBuf.clear();
 		}
 		else
 		{
@@ -223,42 +233,37 @@ void readingCycleUpperBoundState(const char &c, string &comReadingBuf, int &stat
 
 string generateCode(const string &templateFileContent)
 {
-	stack<string> buf;
-	stack<char> comBuf;
-	stack<cycleInfo> cyclesInfo;
-	string comReadingBuf;
-	map<string, int*> numbers;
-	int state = 0;
-
-	buf.push("");
+	genStatus status;
+	status.state = 0;
+	status.buf.push("");
 	for (char c : templateFileContent)
 	{
-		printf("state: %i\n", state, comReadingBuf.c_str());
-		switch (state)
+		printf("state: %i\n", status.state);
+		switch (status.state)
 		{
 		case 0: 
-			readingTextState(c, buf, state);
+			readingTextState(c, status);
 			break;
 		case 1: 
-			readingCommandState(c, comReadingBuf, state, comBuf, buf, cyclesInfo);
+			readingCommandState(c, status);
 			break;
 		case 2:
-			ignoringSymbolState(c, state);
+			ignoringSymbolState(c, status);
 			break;
 		case 200:
-			readingCycleCounterState(c, comReadingBuf, state, numbers, cyclesInfo);
+			readingCycleCounterState(c, status);
 			break;
 		case 201:
-			readingCycleLowerBoundState(c, comReadingBuf, state, cyclesInfo);
+			readingCycleLowerBoundState(c, status);
 			break;
 		case 202:
-			readingCycleUpperBoundState(c, comReadingBuf, state, cyclesInfo);
+			readingCycleUpperBoundState(c, status);
 			break;
 			
 		}
 	}
 
-	return buf.top();
+	return status.buf.top();
 }
 
 void generateCode(const char *templatePath, const char *typesSourcePath, const char *outputPath)
