@@ -6,14 +6,14 @@
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	const char *defTemplateFileName         = "template.txt";
-	const char *defTypesDescriptionFileName = "type description.txt";
-	const char *outputFileName              = "generation result.txt";
+	const char *defTemplatePath    = "template.txt";
+	const char *defTypesSourcePath = "type description.txt";
+	const char *outputPath         = "generation result.txt";
 
 	switch (argc)
 	{
 	case 1:
-		generateCode(defTemplateFileName, defTypesDescriptionFileName, outputFileName);	
+		generateCode(defTemplatePath, defTypesSourcePath, outputPath);	
 		break;
 	case 2:
 		
@@ -25,6 +25,6 @@ int _tmain(int argc, _TCHAR* argv[])
 
 		break;
 	}
-
+	getchar();
 	return 0;
 }

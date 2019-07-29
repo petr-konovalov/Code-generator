@@ -1,4 +1,23 @@
 #include "CodeGeneration.h"
+#include <iostream>
+#include <fstream>
+#include <map>
+#include <stack>
+#include <string>
+
+using namespace std;
+
+struct cycleInfo
+{
+	string counter;
+	int minVal;
+	int maxVal;
+
+	cycleInfo(string counterName) : minVal(0), maxVal(0)
+	{
+		counter = counterName;
+	}
+};
 
 string fileToStr(ifstream &file)
 {
@@ -26,7 +45,7 @@ string fileToStr(const char *fileName)
 
 bool isDelim(const char &c)
 {
-	return c != ' ' && c != '\n' && c != '\t';
+	return c == ' ' || c == '\n' || c == '\t';
 }
 
 bool isDigit(const char &c)
@@ -46,74 +65,167 @@ void readingTextState(const char &c, stack<string> &buf, int &state)
 	}
 }
 
-void readingCommandState(const char &c, string &comReadingBuf, int &state)
+string inputVar(string text, string varName, int val)
 {
-	if (!isDelim(c))
+	string sVal = to_string(val);
+	bool comMode = false;
+	string comBuf;
+	string res;
+
+	for (char c : text)
+	{
+		if (comMode)
+		{
+			if (c == '$' || c == '\n')
+			{
+				if (comBuf == varName)
+					res.append(sVal);
+				else
+					res.append("$" + comBuf + "$");
+				comBuf = "";
+				comMode = false;
+			}
+			else if (!isDelim(c))
+				comBuf += c;
+		}
+		else
+		{
+			if (c == '$')
+				comMode = true;
+			else
+				res += c;
+		}
+	}
+
+	return res;
+}
+
+void commandExecution(stack<string> &buf, stack<char> &comBuf, stack<cycleInfo> &cyclesInfo)
+{
+	switch (comBuf.top())
+	{
+	case 'f':
+	{
+		string text = buf.top();
+		buf.pop();
+		for (int i = cyclesInfo.top().minVal; i <= cyclesInfo.top().maxVal; ++i)
+		{
+			buf.top().append(inputVar(text, cyclesInfo.top().counter, i));
+		}
+		cyclesInfo.pop();
+	}
+	break;
+	case 'i':
+	{
+
+	}
+	break;
+	}
+	comBuf.pop();
+}
+
+void readingCommandState(const char &c, string &comReadingBuf, int &state, stack<char> &comBuf, stack<string> &buf, stack<cycleInfo> &cyclesInfo)
+{
+	if (!isDelim(c) && c != '$' && c != '\n')
+	{
 		comReadingBuf += c;
-	else if (c == '$')
-		state = 0;
+	}
 	else if (!comReadingBuf.empty())
 	{
+		printf("%s\n", comReadingBuf.c_str());
 		if (comReadingBuf == "for")
+		{
+			comBuf.push('f');
+			buf.push("");
 			state = 200;
+		}
 		else if (comReadingBuf == "if")
+		{
+			comBuf.push('e');
 			state = 300;
+		}
 		else if (comReadingBuf == "end")
-			state = 400;
+		{
+			commandExecution(buf, comBuf, cyclesInfo);
+			if (c == '$' || c == '\n')
+				state = 0;
+			else
+				state = 2;
+		}
 		else
-			state = 500;
+		{
+			//variable value search
+			buf.top().append("$" + comReadingBuf + "$");
+			if (c == '$' || c == '\n')
+				state = 0;
+			else
+				state = 2;
+		}
 		comReadingBuf.clear();
 	}
 }
 
-void readingCommandForCounterState(const char &c, string &comReadingBuf, int &state, map<string, int*> &counters, stack<pair<int*, int> > cyclesBuf)
+void ignoringSymbolState(const char &c, int &state)
 {
-	if (!isDelim(c))
-		comReadingBuf += c;
-	else if (c == '=')
+	if (c == '$' || c == '\n')
+		state = 0;
+}
+
+void readingCycleCounterState(const char &c, string &comReadingBuf, int &state, map<string, int*> &counters, stack<cycleInfo> &cyclesInfo)
+{
+	if (c == '=')
 	{
-		cyclesBuf.push(make_pair(new int, 0));
-		counters[comReadingBuf] = cyclesBuf.top().first;
+		cyclesInfo.push(cycleInfo(comReadingBuf));
 		state = 201;
 		comReadingBuf.clear();
 	}
+	else if (!isDelim(c))
+		comReadingBuf += c;
 }
 
-void readingCommandForLowerBoundState(const char &c, string &comReadingBuf, int &state, stack<pair<int*, int> > cyclesBuf)
+void readingCycleLowerBoundState(const char &c, string &comReadingBuf, int &state, stack<cycleInfo> &cyclesInfo)
 {
-	if (!isDelim(c))
+	if (c == ':')
 	{
+		if (isDigit(comReadingBuf[0]) || comReadingBuf[0] == '-')
+		{
+			cyclesInfo.top().minVal = atoi(comReadingBuf.c_str());
+			state = 202;
+			comReadingBuf.clear();
+		}
+		else
+		{
+			//variable value search
+		}
+	}
+	else if (!isDelim(c))
 		comReadingBuf += c;
-	}
-	else if (c == ':')
-	{
-		int value = atoi(comReadingBuf.c_str());
-		*cyclesBuf.top().first = value;
-		state = 202;
-		comReadingBuf.clear();
-	}
 }
 
-void readingCommandForUpperBoundState(const char &c, string &comReadingBuf, int &state, stack<pair<int*, int> > cyclesBuf)
+void readingCycleUpperBoundState(const char &c, string &comReadingBuf, int &state, stack<cycleInfo> &cyclesInfo)
 {
-	if (!isDelim(c))
-	{
+	if (!isDelim(c) && c != '$' && c != '\n')
 		comReadingBuf += c;
-	}
 	else if (!comReadingBuf.empty())
 	{
-		int value = atoi(comReadingBuf.c_str());
-		cyclesBuf.top().second = value;
-		state = 1;
-		comReadingBuf.clear();
+		if (isDigit(comReadingBuf[0]) || comReadingBuf[0] == '-')
+		{
+			cyclesInfo.top().maxVal = atoi(comReadingBuf.c_str());
+			state = (c == '$') || (c == '\n') ? 0: 1;
+			comReadingBuf.clear();
+		}
+		else
+		{
+			//variable value search
+		}
 	}
 }
 
 string generateCode(const string &templateFileContent)
 {
 	stack<string> buf;
-	stack<string> comBuf;
-	stack<pair<int*, int> > cyclesBuf;
+	stack<char> comBuf;
+	stack<cycleInfo> cyclesInfo;
 	string comReadingBuf;
 	map<string, int*> numbers;
 	int state = 0;
@@ -121,34 +233,39 @@ string generateCode(const string &templateFileContent)
 	buf.push("");
 	for (char c : templateFileContent)
 	{
+		printf("state: %i\n", state, comReadingBuf.c_str());
 		switch (state)
 		{
 		case 0: 
 			readingTextState(c, buf, state);
 			break;
 		case 1: 
-			readingCommandState(c, comReadingBuf, state);
+			readingCommandState(c, comReadingBuf, state, comBuf, buf, cyclesInfo);
+			break;
+		case 2:
+			ignoringSymbolState(c, state);
 			break;
 		case 200:
-			readingCommandForCounterState(c, comReadingBuf, state, numbers, cyclesBuf);
+			readingCycleCounterState(c, comReadingBuf, state, numbers, cyclesInfo);
 			break;
 		case 201:
-			readingCommandForLowerBoundState(c, comReadingBuf, state, cyclesBuf);
+			readingCycleLowerBoundState(c, comReadingBuf, state, cyclesInfo);
 			break;
 		case 202:
-			readingCommandForUpperBoundState(c, comReadingBuf, state, cyclesBuf);
+			readingCycleUpperBoundState(c, comReadingBuf, state, cyclesInfo);
 			break;
+			
 		}
 	}
 
 	return buf.top();
 }
 
-void generateCode(const char *templateFileName, const char *typesDescriptionFileName, const char *outputFileName)
+void generateCode(const char *templatePath, const char *typesSourcePath, const char *outputPath)
 {
-	ofstream oF = ofstream(outputFileName);
+	ofstream oF = ofstream(outputPath);
 
-	string fileContent = fileToStr(templateFileName);
+	string fileContent = fileToStr(templatePath);
 	oF << generateCode(fileContent).c_str();
 
 	oF.close();
